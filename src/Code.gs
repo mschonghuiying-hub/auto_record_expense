@@ -19,6 +19,11 @@ function doPost(e) {
       return ok_();
     }
 
+    if (isDuplicateUpdate_(update.update_id)) {
+      console.log('Skipping duplicate update_id=' + update.update_id);
+      return ok_();
+    }
+
     var expense;
     if (msg.photo && msg.photo.length) {
       var largest = msg.photo[msg.photo.length - 1];
@@ -44,6 +49,15 @@ function doPost(e) {
     console.error(err);
   }
   return ok_();
+}
+
+function isDuplicateUpdate_(updateId) {
+  if (updateId == null) return false;
+  var cache = CacheService.getScriptCache();
+  var key = 'tg_upd_' + updateId;
+  if (cache.get(key)) return true;
+  cache.put(key, '1', 600);
+  return false;
 }
 
 function doGet() {
