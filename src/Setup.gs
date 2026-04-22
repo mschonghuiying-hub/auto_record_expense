@@ -39,6 +39,26 @@ function getWebhookInfo() {
 }
 
 /**
+ * Flush updates queued in Telegram's retry buffer without touching the
+ * webhook URL. Useful after an error flurry (e.g. Gemini 429, 302 access
+ * issue) has piled up pending updates that would otherwise re-fire and
+ * create duplicate rows once the webhook recovers.
+ */
+function dropPendingUpdates() {
+  var token = props_().getProperty('TELEGRAM_BOT_TOKEN');
+  var url   = props_().getProperty('WEBHOOK_URL');
+  var res = UrlFetchApp.fetch(
+    'https://api.telegram.org/bot' + token + '/setWebhook' +
+    '?url=' + encodeURIComponent(url) +
+    '&drop_pending_updates=true',
+    { muteHttpExceptions: true }
+  );
+  console.log(res.getContentText());
+}
+
+
+
+/**
  * Optional convenience: fill in your secrets here, run once, then DELETE
  * the values from this file. Prefer using the Script Properties UI.
  */
