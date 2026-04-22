@@ -57,6 +57,32 @@ function dropPendingUpdates() {
 }
 
 /**
+ * Install a time-driven trigger that runs dropPendingUpdates every 30 min.
+ * Use this to auto-flush the residual pending_update_count that Telegram
+ * accumulates when a photo webhook takes longer than its 5-10s timeout.
+ * Run once from the editor; idempotent (removes prior copy first).
+ */
+function installFlushTrigger() {
+  uninstallFlushTrigger();
+  ScriptApp.newTrigger('dropPendingUpdates')
+    .timeBased()
+    .everyMinutes(30)
+    .create();
+  console.log('Installed: dropPendingUpdates every 30 minutes');
+}
+
+function uninstallFlushTrigger() {
+  var removed = 0;
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'dropPendingUpdates') {
+      ScriptApp.deleteTrigger(t);
+      removed++;
+    }
+  });
+  console.log('Removed ' + removed + ' trigger(s)');
+}
+
+/**
  * Optional convenience: fill in your secrets here, run once, then DELETE
  * the values from this file. Prefer using the Script Properties UI.
  */
