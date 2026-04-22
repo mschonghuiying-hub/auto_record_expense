@@ -31,7 +31,7 @@ function doPost(e) {
       expense = callGemini_({
         text: msg.caption || '',
         imageBytes: blob.getBytes(),
-        mimeType: blob.getContentType() || 'image/jpeg'
+        mimeType: 'image/jpeg'
       });
     } else if (msg.text) {
       expense = callGemini_({ text: msg.text });
@@ -43,11 +43,10 @@ function doPost(e) {
     appendExpense_(expense);
     sendMessage_(chatId, formatConfirmation_(expense));
   } catch (err) {
-    var detail = (err && (err.stack || err.message)) || String(err);
-    console.error(detail);
     if (chatId) {
-      sendMessage_(chatId, 'Could not record:\n' + detail.substring(0, 3500));
+      sendMessage_(chatId, 'Could not record: ' + err.message);
     }
+    console.error(err);
   }
   return ok_();
 }
