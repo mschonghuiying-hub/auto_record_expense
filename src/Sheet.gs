@@ -8,11 +8,20 @@
  */
 function appendExpense_(x) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheetName = props_().getProperty('SHEET_NAME') || ss.getSheets()[0].getName();
+  console.log('Spreadsheet: ' + ss.getName() + ' (id=' + ss.getId() + ')');
+  console.log('All tabs: ' + ss.getSheets().map(function (s) { return s.getName(); }).join(' | '));
+
+  var configured = props_().getProperty('SHEET_NAME');
+  var sheetName = configured || ss.getSheets()[0].getName();
+  console.log('SHEET_NAME property: ' + JSON.stringify(configured) + ' -> using tab: ' + JSON.stringify(sheetName));
+
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet) throw new Error('Sheet not found: ' + sheetName);
 
+  var before = sheet.getLastRow();
   sheet.appendRow([x.date, x.category, x.amount, x.currency, x.description]);
-  var row = sheet.getLastRow();
-  sheet.getRange(row, 6).setFormula('=TEXT(A' + row + ',"yyyy-mm")');
+  SpreadsheetApp.flush();
+  var after = sheet.getLastRow();
+  sheet.getRange(after, 6).setFormula('=TEXT(A' + after + ',"yyyy-mm")');
+  console.log('Appended to ' + sheetName + ': row ' + before + ' -> ' + after);
 }
