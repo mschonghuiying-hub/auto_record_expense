@@ -31,7 +31,7 @@ function doPost(e) {
       expense = callGemini_({
         text: msg.caption || '',
         imageBytes: blob.getBytes(),
-        mimeType: blob.getContentType() || 'image/jpeg'
+        mimeType: 'image/jpeg'
       });
     } else if (msg.text) {
       expense = callGemini_({ text: msg.text });
@@ -51,12 +51,14 @@ function doPost(e) {
   return ok_();
 }
 
+// TTL set to CacheService max (6 hours) so Telegram webhook retries of the
+// same update_id are deduped even when delivery is delayed by backoff.
 function isDuplicateUpdate_(updateId) {
   if (updateId == null) return false;
   var cache = CacheService.getScriptCache();
   var key = 'tg_upd_' + updateId;
   if (cache.get(key)) return true;
-  cache.put(key, '1', 600);
+  cache.put(key, '1', 21600);
   return false;
 }
 
