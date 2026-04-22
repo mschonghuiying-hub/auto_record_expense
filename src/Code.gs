@@ -43,10 +43,11 @@ function doPost(e) {
     appendExpense_(expense);
     sendMessage_(chatId, formatConfirmation_(expense));
   } catch (err) {
+    var detail = (err && (err.stack || err.message)) || String(err);
+    console.error(detail);
     if (chatId) {
-      sendMessage_(chatId, 'Could not record: ' + err.message);
+      sendMessage_(chatId, 'Could not record:\n' + detail.substring(0, 3500));
     }
-    console.error(err);
   }
   return ok_();
 }
