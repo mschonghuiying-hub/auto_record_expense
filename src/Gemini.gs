@@ -1,0 +1,101 @@
+/**
+ * Gemini client. Given text and/or an image, returns a structured expense:
+ *   { date, category, amount, currency, description }
+ *
+ * Uses Gemini's JSON-schema-constrained output so no regex parsing is needed.
+ */
+
+var GEMINI_MODEL_ = 'gemini-2.5-flash';
+
+var CATEGORIES_ = [
+  'rental', 'family', 'transport', 'car insurance', 'subcriptions',
+  'utilities', 'groceries & household', 'eat-out', 'entertainment', 'other'
+];
+
+function callGemini_(input) {
+  var apiKey = props_().getProperty('GEMINI_API_KEY');
+  var tz = Session.getScriptTimeZone() || 'Australia/Melbourne';
+  var today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+
+  var parts = [{ text: buildPrompt_(input.text || '', today) }];
+  if (input.imageBytes) {
+    parts.push({
+      inline_data: {
+        mime_type: input.mimeType || 'image/jpeg',
+        data: Utilities.base64Encode(input.imageBytes)
+      }
+    });
+  }
+
+  var body = {
+    contents: [{ role: 'user', parts: parts }],
+    generationConfig: {
+      response_mime_type: 'application/json',
+      response_schema: {
+        type: 'OBJECT',
+        properties: {
+          date:        { type: 'STRING' },
+          category:    { type: 'STRING', enum: CATEGORIES_ },
+          amount:      { type: 'NUMBER' },
+          currency:    { type: 'STRING' },
+          description: { type: 'STRING' }
+        },
+        required: ['date', 'category', 'amount', 'currency', 'description']
+      },
+      temperature: 0
+    }
+  };
+
+  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' +
+            GEMINI_MODEL_ + ':generateContent?key=' + encodeURIComponent(apiKey);
+  var res = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(body),
+    muteHttpExceptions: true
+  });
+  var code = res.getResponseCode();
+  var text = res.getContentText();
+  if (code < 200 || code >= 300) {
+    throw new Error('Gemini ' + code + ': ' + text);
+  }
+
+  var data = JSON.parse(text);
+  var candidate = data.candidates && data.candidates[0];
+  var jsonText = candidate && candidate.content && candidate.content.parts &&
+                 candidate.content.parts[0] && candidate.content.parts[0].text;
+  if (!jsonText) throw new Error('Gemini returned no content: ' + text);
+
+  var expense = JSON.parse(jsonText);
+  validateExpense_(expense);
+  return expense;
+}
+
+function buildPrompt_(userText, todayIso) {
+  return [
+    'You extract a single expense record from the user input and/or the',
+    'attached receipt image, and return strict JSON.',
+    '',
+    'Rules:',
+    '- date: YYYY-MM-DD. If the input does not give a date, use today: ' + todayIso + '.',
+    '  If the receipt shows a transaction date, prefer that.',
+    '- category: must be exactly one of: ' + CATEGORIES_.join(', ') + '.',
+    '  Infer from merchant/items. Use "other" only if truly nothing fits.',
+    '- amount: the final total paid (not subtotal, not tax alone). Number, not string.',
+    '- currency: 3-letter ISO code. Default to AUD if not obvious.',
+    '- description: short human-readable summary (max ~60 chars).',
+    '  For a text message like "lunch uni 16.68", use "Lunch uni".',
+    '  For a receipt, use the merchant name and maybe one detail, e.g. "Woolworths groceries".',
+    '',
+    'User text: ' + JSON.stringify(userText || '(none)')
+  ].join('\n');
+}
+
+function validateExpense_(x) {
+  if (!x || typeof x !== 'object') throw new Error('Expense not an object');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(x.date)) throw new Error('Bad date: ' + x.date);
+  if (CATEGORIES_.indexOf(x.category) === -1) throw new Error('Bad category: ' + x.category);
+  if (typeof x.amount !== 'number' || !isFinite(x.amount)) throw new Error('Bad amount: ' + x.amount);
+  if (!x.currency) throw new Error('Missing currency');
+  if (!x.description) throw new Error('Missing description');
+}
