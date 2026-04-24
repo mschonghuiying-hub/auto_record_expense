@@ -3,12 +3,14 @@
  * Bot token is read from Script Properties.
  */
 
-function sendMessage_(chatId, text) {
+function sendMessage_(chatId, text, parseMode) {
   var token = props_().getProperty('TELEGRAM_BOT_TOKEN');
+  var body = { chat_id: chatId, text: text };
+  if (parseMode) body.parse_mode = parseMode;
   UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
     method: 'post',
     contentType: 'application/json',
-    payload: JSON.stringify({ chat_id: chatId, text: text }),
+    payload: JSON.stringify(body),
     muteHttpExceptions: true
   });
 }
