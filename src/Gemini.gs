@@ -126,32 +126,45 @@ function callGeminiCommentary_(expense, summary) {
                   ', variance ' + summary.total.variance;
 
   var prompt = [
-    'You are the warm, encouraging companion inside a personal expense',
-    'tracker. The user just logged a single expense and you are writing a',
-    'short reply that goes underneath the budget table they will see.',
+    'You are writing a 2-3 sentence friendly nudge about the user\'s monthly',
+    'budget, shown beneath a budget table in their Telegram expense bot.',
+    'Tone: warm, encouraging, like a money-savvy friend.',
     '',
     'Today: ' + todayIso + ' (day ' + dayOfMonth + ' of ' + daysInMonth +
       ' in ' + summary.month + ', ' + daysRemaining + ' days remaining).',
-    'Just recorded: "' + expense.description + '" (' + expense.category +
-      ', ' + expense.amount + ' ' + expense.currency + ').',
     '',
     'Month-to-date by category (negative variance = over budget):',
     rowLines,
     totalLine,
     '',
-    'Write 1-3 short sentences in a friendly, encouraging tone. Naturally',
-    'weave together whichever of these are most relevant: how the month is',
-    'pacing vs. days remaining; the worst over-budget categories with',
-    'numbers; whether this new expense pushed something further over or',
-    'stayed within budget; one small concrete suggestion if useful. Plain',
-    'text only, no markdown, no emoji, under 280 characters total.'
+    'Most recent expense (only mention if it meaningfully moved a category,',
+    'e.g. pushed it over for the first time; otherwise ignore it): "' +
+      expense.description + '" (' + expense.category + ', ' + expense.amount +
+      ' ' + expense.currency + ').',
+    '',
+    'Required content:',
+    '1. Lead with how the month is tracking overall (total budget vs actual,',
+    '   in dollars, plus days remaining).',
+    '2. Name the 1-2 worst over-budget categories with the dollar amount over.',
+    '3. End with a small, concrete suggestion for the days remaining.',
+    '',
+    'Do NOT just acknowledge that the expense was logged. Do NOT say things',
+    'like "That\'s X AUD logged" or "Expense recorded" — the user already',
+    'sees the confirmation above this commentary.',
+    '',
+    'Example output:',
+    '"You\'re $1,400 over for the month with 5 days left — entertainment',
+    '($870 over) and transport ($615) are the main culprits. Groceries are',
+    'still healthy though, so try to ride those out and skip eat-out this week."',
+    '',
+    'Plain text only, no markdown, no emoji, 200-350 characters.'
   ].join('\n');
 
   var body = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: {
-      temperature: 0.5,
-      maxOutputTokens: 160
+      temperature: 0.3,
+      maxOutputTokens: 200
     }
   };
 
