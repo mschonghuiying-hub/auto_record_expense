@@ -51,11 +51,15 @@ function doPost(e) {
     }
 
     if (summary) {
-      sendMessage_(
-        chatId,
-        escapeHtml_(confirmation) + '\n\n' + formatSummaryTable_(summary),
-        'HTML'
-      );
+      var commentary = '';
+      try {
+        commentary = callGeminiCommentary_(expense, summary);
+      } catch (commentaryErr) {
+        console.warn('Commentary failed: ' + (commentaryErr && commentaryErr.stack || commentaryErr));
+      }
+      var reply = escapeHtml_(confirmation) + '\n\n' + formatSummaryTable_(summary);
+      if (commentary) reply += '\n\n💬 ' + escapeHtml_(commentary);
+      sendMessage_(chatId, reply, 'HTML');
     } else {
       sendMessage_(chatId, confirmation);
     }

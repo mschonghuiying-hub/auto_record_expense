@@ -99,3 +99,80 @@ function validateExpense_(x) {
   if (!x.currency) throw new Error('Missing currency');
   if (!x.description) throw new Error('Missing description');
 }
+
+/**
+ * Friendly 1-3 sentence commentary on the month's budget state.
+ * Uses the per-category rows + total from readInsightsSummary_() and the
+ * just-recorded expense, and returns plain text suitable for appending to
+ * the Telegram reply. Returns '' on any error so the caller can no-op.
+ */
+function callGeminiCommentary_(expense, summary) {
+  var apiKey = props_().getProperty('GEMINI_API_KEY');
+  if (!apiKey) return '';
+
+  var tz = Session.getScriptTimeZone() || 'Australia/Melbourne';
+  var now = new Date();
+  var todayIso = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+  var dayOfMonth = Number(Utilities.formatDate(now, tz, 'd'));
+  var daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  var daysRemaining = daysInMonth - dayOfMonth;
+
+  var rowLines = summary.rows.map(function (r) {
+    return '- ' + r.category + ': budget ' + r.budget +
+           ', actual ' + r.actual + ', variance ' + r.variance;
+  }).join('\n');
+  var totalLine = 'Total: budget ' + summary.total.budget +
+                  ', actual ' + summary.total.actual +
+                  ', variance ' + summary.total.variance;
+
+  var prompt = [
+    'You are the warm, encouraging companion inside a personal expense',
+    'tracker. The user just logged a single expense and you are writing a',
+    'short reply that goes underneath the budget table they will see.',
+    '',
+    'Today: ' + todayIso + ' (day ' + dayOfMonth + ' of ' + daysInMonth +
+      ' in ' + summary.month + ', ' + daysRemaining + ' days remaining).',
+    'Just recorded: "' + expense.description + '" (' + expense.category +
+      ', ' + expense.amount + ' ' + expense.currency + ').',
+    '',
+    'Month-to-date by category (negative variance = over budget):',
+    rowLines,
+    totalLine,
+    '',
+    'Write 1-3 short sentences in a friendly, encouraging tone. Naturally',
+    'weave together whichever of these are most relevant: how the month is',
+    'pacing vs. days remaining; the worst over-budget categories with',
+    'numbers; whether this new expense pushed something further over or',
+    'stayed within budget; one small concrete suggestion if useful. Plain',
+    'text only, no markdown, no emoji, under 280 characters total.'
+  ].join('\n');
+
+  var body = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0.5,
+      maxOutputTokens: 160
+    }
+  };
+
+  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' +
+            GEMINI_MODEL_ + ':generateContent?key=' + encodeURIComponent(apiKey);
+  var res = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(body),
+    muteHttpExceptions: true
+  });
+  var code = res.getResponseCode();
+  var text = res.getContentText();
+  if (code < 200 || code >= 300) {
+    console.warn('Commentary Gemini ' + code + ': ' + text);
+    return '';
+  }
+
+  var data = JSON.parse(text);
+  var candidate = data.candidates && data.candidates[0];
+  var out = candidate && candidate.content && candidate.content.parts &&
+            candidate.content.parts[0] && candidate.content.parts[0].text;
+  return out ? String(out).trim() : '';
+}
