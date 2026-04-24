@@ -52,10 +52,14 @@ function doPost(e) {
 
     if (summary) {
       var commentary = '';
-      try {
-        commentary = callGeminiCommentary_(expense, summary);
-      } catch (commentaryErr) {
-        console.warn('Commentary failed: ' + (commentaryErr && commentaryErr.stack || commentaryErr));
+      var commentaryEnabled =
+        String(props_().getProperty('ENABLE_COMMENTARY') || '').toLowerCase() !== 'false';
+      if (commentaryEnabled) {
+        try {
+          commentary = callGeminiCommentary_(expense, summary);
+        } catch (commentaryErr) {
+          console.warn('Commentary failed: ' + (commentaryErr && commentaryErr.stack || commentaryErr));
+        }
       }
       var reply = escapeHtml_(confirmation) + '\n\n' + formatSummaryTable_(summary);
       if (commentary) reply += '\n\n💬 ' + escapeHtml_(commentary);
