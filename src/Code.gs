@@ -71,7 +71,11 @@ function doPost(e) {
     var detail = (err && (err.stack || err.message)) || String(err);
     console.error(detail);
     if (chatId) {
-      sendMessage_(chatId, 'Could not record:\n' + detail.substring(0, 3500));
+      try {
+        sendMessage_(chatId, 'Could not record:\n' + detail.substring(0, 3500));
+      } catch (notifyErr) {
+        console.error('Notify failed: ' + (notifyErr && notifyErr.stack || notifyErr));
+      }
     }
   }
   return ok_();
