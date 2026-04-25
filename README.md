@@ -1,25 +1,77 @@
 # auto_record_expense
 
 A serverless Telegram expense-logger. Send the bot a text message ("lunch uni
-16.68") or a receipt photo, and a new row appears in your Google Sheet.
+16.68") or a receipt photo, and a new row appears in your Google Sheet. The
+bot replies with a ✅ confirmation, a current-month budget-vs-actual table,
+and a friendly AI nudge about how the month is tracking.
 
 - Telegram Bot API → Google Apps Script Web App → Gemini API → Google Sheet
 - No VM, no server, no cron. Runs entirely on Google's free tier.
-- Gemini parses the message / receipt and returns a structured row
-  (`date, category, amount, currency, description`).
+- Gemini parses the message / receipt into a structured row
+  (`date, category, amount, currency, description`) and — on a second call —
+  writes a short budget commentary based on an `insights` tab you maintain
+  in the same sheet.
 
 ## How it works
 
 ```
-Telegram   ──POST──▶   Apps Script doPost   ──▶   Gemini 2.5 Flash
-  ▲                         │                         │
-  │                         ▼                         ▼
-  └────── reply ◀── append row to "expense record" sheet
+Telegram ──POST──▶ Apps Script doPost
+                       │
+                       ├─▶ Gemini 2.5 Flash (parse text/photo → expense JSON)
+                       ▼
+                   append row to "expense record" tab
+                       │
+                       ├─▶ read this month's rows from "insights" tab
+                       │
+                       ├─▶ Gemini 2.5 Flash (commentary prompt → nudge text)
+                       ▼
+                   reply to Telegram
 ```
 
 Secrets (bot token, Gemini key, allowed chat ID) live in **Script Properties**,
 never in source. `doPost` ignores any message whose `chat.id` doesn't match the
 allowed ID, so a random person who learns the webhook URL can't spam your sheet.
+
+## What the reply looks like
+
+```
+✅ 2026-04-25 · groceries & household · 11 AUD
+Coles
+
+📊 2026-04
+Category       Bud   Act   Var
+car insurance  217   217     0
+eat-out        200   430  -230
+entertainment   13   883  -870
+family         500   500     0
+groceries & …  500    98   402
+rental        2303  2303     0
+subcriptions   100   239  -138
+transport      176   791  -615
+-----------------------------
+Total         4009  5450 -1441
+
+💬 You're $1,441 over for the month with 5 days left — entertainment
+($870 over) and transport ($615) are the main culprits. Try to ride out
+the healthy categories and skip eat-out this week.
+```
+
+The 💬 commentary is on by default. Set the `ENABLE_COMMENTARY` Script
+Property to `false` to skip it (the confirmation + table still fire).
+
+## Prerequisites: two tabs in your sheet
+
+- **`expense record`** tab (the bot appends rows here):
+  `A date (YYYY-MM-DD)  B category  C amount  D currency  E description
+  F yyyy-mm` — column F is auto-filled by formula.
+- **`insights`** tab (the bot reads this for the summary table):
+  `A Month (yyyy-MM)  B Budget Category  C Spent  D budget  E remaining`.
+  Populate it however you like (typical: SUMIFS / QUERY against `expense
+  record`, with a per-category `budget` column). The bot filters to today's
+  month and treats column E as the variance.
+
+If the `insights` tab doesn't exist, the bot falls back to sending only the
+confirmation line — nothing breaks.
 
 ## Setup (zero-knowledge, ~15 min)
 
@@ -30,9 +82,6 @@ You will not install anything on your computer. Everything happens in a browser.
 1. Open Telegram, message `@BotFather`.
 2. Send `/newbot`, pick a name, pick a username ending in `bot`.
 3. BotFather replies with an **HTTP API token** like `12345:ABCDEF...`. Save it.
-
-Keep your old n8n bot running — you'll switch over at the end only once the new
-one works.
 
 ### 2. Get your Telegram chat ID
 
@@ -69,17 +118,22 @@ In the Apps Script editor:
 
 ### 6. Add your secrets
 
-1. **Project Settings → Script Properties → Add script property**. Add these
-   four (names must match exactly):
+**Project Settings → Script Properties → Add script property**. Required:
 
-   | Property             | Value                                         |
-   | -------------------- | --------------------------------------------- |
-   | `TELEGRAM_BOT_TOKEN` | the token from step 1                         |
-   | `GEMINI_API_KEY`     | the key from step 3                           |
-   | `ALLOWED_CHAT_ID`    | your chat ID from step 2                      |
-   | `SHEET_NAME`         | the tab name in your sheet (e.g. `Sheet1`)    |
+| Property             | Value                                         |
+| -------------------- | --------------------------------------------- |
+| `TELEGRAM_BOT_TOKEN` | the token from step 1                         |
+| `GEMINI_API_KEY`     | the key from step 3                           |
+| `ALLOWED_CHAT_ID`    | your chat ID from step 2                      |
+| `SHEET_NAME`         | the expense tab name (e.g. `expense record`)  |
 
-2. Save.
+Optional:
+
+| Property              | Effect |
+| --------------------- | ------ |
+| `INSIGHTS_SHEET_NAME` | Name of the monthly aggregation tab. Defaults to `insights`. |
+| `ENABLE_COMMENTARY`   | Set to `false` to skip the 💬 AI nudge (saves one Gemini call per message). Any other value (or unset) keeps it on. |
+| `WEBHOOK_URL`         | Filled in later in step 8. |
 
 ### 7. Smoke-test Gemini + sheet before touching Telegram
 
@@ -107,20 +161,37 @@ just adds a webhook on top of this.
 
 1. In the editor, open `Setup.gs`, pick `registerWebhook` → **Run**.
 2. View → **Logs**. You should see `{"ok":true,...}`.
-3. Sanity check: also run `getWebhookInfo`; the `url` field should match your
-   `/exec` URL, and `pending_update_count` should be `0`.
+3. Sanity check: also run `getWebhookInfo`; the `url` field should match
+   your `/exec` URL, `pending_update_count` should be `0`, and
+   `allowed_updates` should be `["message"]` (the bot only wants message
+   events, nothing else).
 
 ### 10. Try it from Telegram
 
-- Send `lunch uni 16.68` → expect a row and a ✅ confirmation reply.
+- Send `lunch uni 16.68` → expect a new row in `expense record`, a ✅
+  confirmation, the budget table for the current month, and a 💬
+  commentary line.
 - Send a receipt photo (with or without a caption) → same.
 - From a different Telegram account, send a message → nothing should happen.
 
-### 11. Decommission n8n
+### 11. (Recommended) Schedule `dropPendingUpdates`
 
-Once you've used the new bot for a day or two and everything's landing
-correctly, shut down your n8n VM. Your old bot token still works — you can
-delete that bot via BotFather (`/deletebot`) whenever.
+Telegram retries failed webhook deliveries with backoff and queues new
+messages behind them. If a transient error (Gemini 429, a network blip)
+ever piles up the retry buffer, new messages won't arrive until the queue
+is cleared.
+
+Set up a time-driven trigger so the queue is flushed automatically:
+
+1. In the Apps Script editor, click the clock icon (**Triggers**) →
+   **+ Add Trigger**.
+2. Function: `dropPendingUpdates`. Event source: **Time-driven**. Type:
+   **Minutes timer** → **Every 30 minutes** (or longer; 30 min is a
+   comfortable default).
+3. Save.
+
+If you ever notice "execution completed, no reply on Telegram", you can
+also just run `dropPendingUpdates` manually to clear things on demand.
 
 ## Updating the code later
 
@@ -130,17 +201,31 @@ Version: New version → Deploy** for the live webhook URL to pick it up.
 (Saving alone is enough for manual runs from the editor, but NOT for the
 deployed Web App.)
 
+If you change what `allowed_updates` or other webhook settings should be,
+re-run `registerWebhook` once for Telegram to learn the new config.
+
 ## Troubleshooting
 
-- **Telegram messages don't reach the sheet.** Run `getWebhookInfo` from
-  `Setup.gs` and check `last_error_message`. Common causes: webhook URL is
-  the `/dev` URL instead of `/exec`; `ALLOWED_CHAT_ID` doesn't match your
+- **Executions say "Completed" but no reply arrives on Telegram.** Telegram's
+  pending-updates queue has backed up. Run `dropPendingUpdates` from
+  `Setup.gs`, or wait for the scheduled trigger (step 11) to do it for you.
+- **Telegram messages don't reach the sheet at all.** Run `getWebhookInfo`
+  from `Setup.gs` and check `last_error_message`. Common causes: webhook URL
+  is the `/dev` URL instead of `/exec`; `ALLOWED_CHAT_ID` doesn't match your
   actual chat ID (check via `getUpdates` as in step 2).
 - **"Gemini 400 / 403".** The API key is wrong, disabled, or hitting quota.
   Regenerate in AI Studio.
 - **Bot replies "Could not record: Bad category: X".** Gemini picked a value
   outside the enum — shouldn't happen with schema-constrained output, but if
   it does, tighten the prompt in `Gemini.gs`.
+- **Reply has the ✅ confirmation but no budget table.** Either the
+  `insights` tab doesn't exist (create it, see Prerequisites) or it has no
+  rows for the current month yet (expected behaviour until you log one
+  expense that flows into `insights` for today's month).
+- **💬 commentary is truncated or wrong.** The commentary call logs its
+  `finishReason` in Executions when it's not `STOP`. If you want to silence
+  commentary entirely, set `ENABLE_COMMENTARY=false` in Script Properties —
+  no redeploy needed.
 - **Nothing happens at all.** Open **Apps Script → Executions** tab to see
   webhook invocations and errors.
 
@@ -155,8 +240,11 @@ groceries & household, eat-out, entertainment, other`.
 
 ## Free-tier limits (personal use context)
 
-- Apps Script: 90 min/day runtime, 20,000 `UrlFetchApp` calls/day. A single
-  expense uses 2–3 fetches and <5 s of runtime.
-- Gemini 2.5 Flash: the free tier's daily RPD and TPM are well above what a
-  handful of receipts per day uses.
-- Telegram Bot API: free.
+- **Apps Script**: 90 min/day runtime, 20,000 `UrlFetchApp` calls/day. A
+  single expense uses 3–4 fetches (Telegram read, Gemini parse, optional
+  Gemini commentary, Telegram reply) and well under 5 s of runtime.
+- **Gemini 2.5 Flash**: with commentary on, one expense = **2 Gemini calls**
+  (parse + commentary); with commentary off, just 1. Personal-use volume
+  is far under the free tier's RPD/TPM. The commentary call runs with
+  `thinkingConfig.thinkingBudget: 0` so it doesn't burn thinking tokens.
+- **Telegram Bot API**: free.
