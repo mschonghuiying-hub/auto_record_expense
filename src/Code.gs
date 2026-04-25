@@ -2,34 +2,51 @@
  * Webhook entry point for the Telegram bot.
  * Telegram POSTs every update (message, photo, etc.) to the Web App /exec URL.
  *
- * Flow:
+ * Note: Apps Script /exec URLs return a 302 redirect that Telegram won't
+ * follow, so the project runs in long-polling mode (see Poller.gs). doPost
+ * is kept as a fallback in case the user re-registers a webhook.
+ *
+ * Flow (shared with the poller via processUpdate_):
  *   text message  -> Gemini (text prompt)   -> expense JSON -> sheet + reply
  *   photo message -> Gemini (image + text)  -> expense JSON -> sheet + reply
  */
 function doPost(e) {
+  try {
+    var update = JSON.parse(e.postData.contents);
+    processUpdate_(update);
+  } catch (err) {
+    console.error((err && (err.stack || err.message)) || String(err));
+  }
+  return ok_();
+}
+
+/**
+ * Shared update handler used by both the webhook (doPost) and the poller
+ * (Poller.gs::pollUpdates). Sends user-visible error messages on failure.
+ */
+function processUpdate_(update) {
   var chatId = null;
   var updateId = null;
   try {
-    var update = JSON.parse(e.postData.contents);
-    var msg = update.message || update.edited_message;
-    if (!msg) return ok_();
+    var msg = update && (update.message || update.edited_message);
+    if (!msg) return;
 
     chatId = msg.chat && msg.chat.id;
     var allowed = props_().getProperty('ALLOWED_CHAT_ID');
     if (!allowed || String(chatId) !== String(allowed)) {
-      return ok_();
+      return;
     }
 
     updateId = update.update_id;
     if (wasUpdateProcessed_(updateId)) {
       console.log('Skipping duplicate update_id=' + updateId);
-      return ok_();
+      return;
     }
 
     if (msg.text && isSummaryCommand_(msg.text)) {
       handleSummaryCommand_(chatId);
       markUpdateProcessed_(updateId);
-      return ok_();
+      return;
     }
 
     var expense;
@@ -46,7 +63,7 @@ function doPost(e) {
     } else {
       sendMessage_(chatId, 'Send text like "lunch 16.68" or a receipt photo.');
       markUpdateProcessed_(updateId);
-      return ok_();
+      return;
     }
 
     appendExpense_(expense);
@@ -77,7 +94,6 @@ function doPost(e) {
       }
     }
   }
-  return ok_();
 }
 
 // Two-phase dedup: a retry from Telegram is only ignored once the original

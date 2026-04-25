@@ -43,6 +43,33 @@ function getWebhookInfo() {
 }
 
 /**
+ * Switch the bot to long-polling mode. Apps Script /exec URLs return a 302
+ * redirect that Telegram's webhook won't follow, so we drop the webhook and
+ * have Poller.gs::pollUpdates call getUpdates on a 1-min trigger instead.
+ *
+ * After running this, add a time-driven trigger for `pollUpdates` (clock
+ * icon in the editor → Add Trigger → every 1 minute).
+ */
+function enablePolling() {
+  unregisterWebhook();
+  // Reset the offset so we don't re-process a stale update_id range from a
+  // previous polling run after switching modes back and forth.
+  props_().deleteProperty('TG_OFFSET');
+  console.log('Webhook removed. Now add a 1-minute time-driven trigger ' +
+              'for pollUpdates (Apps Script editor → clock icon → Add Trigger).');
+}
+
+/**
+ * Revert to webhook mode. Mostly for users who want to experiment; the
+ * 302 retry storm makes this not recommended for production use.
+ */
+function disablePolling() {
+  registerWebhook();
+  console.log('Webhook re-registered. Remember to delete the pollUpdates ' +
+              'time-driven trigger so the bot doesn\'t double-process updates.');
+}
+
+/**
  * Flush updates queued in Telegram's retry buffer without touching the
  * webhook URL. Useful after an error flurry (e.g. Gemini 429, 302 access
  * issue) has piled up pending updates that would otherwise re-fire and

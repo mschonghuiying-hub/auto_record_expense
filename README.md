@@ -2,63 +2,86 @@
 
 A serverless Telegram expense-logger. Send the bot a text message ("lunch uni
 16.68") or a receipt photo, and a new row appears in your Google Sheet. The
-bot replies with a ✅ confirmation, a current-month budget-vs-actual table,
-and a friendly AI nudge about how the month is tracking.
+bot replies with a ✅ confirmation and a current-month budget progress table.
+Send `/summary` for the table plus a friendly AI nudge about how the month is
+tracking.
 
-- Telegram Bot API → Google Apps Script Web App → Gemini API → Google Sheet
+- Apps Script polls Telegram → Gemini API → Google Sheet
 - No VM, no server, no cron. Runs entirely on Google's free tier.
 - Gemini parses the message / receipt into a structured row
-  (`date, category, amount, currency, description`) and — on a second call —
-  writes a short budget commentary based on an `insights` tab you maintain
-  in the same sheet.
+  (`date, category, amount, currency, description`); a second Gemini call,
+  triggered by `/summary`, writes a short budget commentary based on an
+  `insights` tab you maintain in the same sheet.
 
 ## How it works
 
 ```
-Telegram ──POST──▶ Apps Script doPost
-                       │
-                       ├─▶ Gemini 2.5 Flash (parse text/photo → expense JSON)
-                       ▼
-                   append row to "expense record" tab
-                       │
-                       ├─▶ read this month's rows from "insights" tab
-                       │
-                       ├─▶ Gemini 2.5 Flash (commentary prompt → nudge text)
-                       ▼
-                   reply to Telegram
+Apps Script (1-min trigger) ──getUpdates──▶ Telegram
+        │
+        ├─▶ Gemini 2.5 Flash (parse text/photo → expense JSON)
+        ▼
+    append row to "expense record" tab
+        │
+        ▼
+    sendMessage reply (confirmation + budget table)
+
+/summary command:
+        ├─▶ read current month from "insights" tab
+        ├─▶ Gemini 2.5 Flash (commentary prompt → nudge text)
+        ▼
+    sendMessage reply (table + commentary)
 ```
 
+### Why polling instead of a webhook?
+
+Apps Script Web Apps return a 302 redirect for `/exec` URLs (the script
+actually runs at `script.googleusercontent.com`). Telegram's webhook system
+doesn't follow redirects — it treats every response as a failed delivery and
+retries with exponential backoff. The retries pile up in the pending queue
+behind real messages and chew through the daily execution quota.
+
+Long-polling avoids the redirect issue entirely: Apps Script calls Telegram,
+not the other way around. The trade-off is up to ~60 s latency between
+sending a message and getting a reply, which is fine for an expense logger.
+
 Secrets (bot token, Gemini key, allowed chat ID) live in **Script Properties**,
-never in source. `doPost` ignores any message whose `chat.id` doesn't match the
-allowed ID, so a random person who learns the webhook URL can't spam your sheet.
+never in source. `processUpdate_` ignores any message whose `chat.id` doesn't
+match the allowed ID, so even if your token leaks, only your own chat is
+processed.
 
 ## What the reply looks like
+
+After every expense:
 
 ```
 ✅ 2026-04-25 · groceries & household · 35 AUD
 Woolworths weekly shop
 
 📊 2026-04
-Category        Bud   Act   Var
-car insurance   200   200     0
-eat-out         250   410  -160
-entertainment    50   230  -180
-family          400   400     0
-groceries & h…  600   280   320
-rental         2000  2000     0
-subcriptions    100   130   -30
-transport       200   360  -160
---------------------------------
-Total          3800  4010  -210
+car insurance ██████████  200/ 200
+eat-out       ██████████  410/ 250
+entertainment ██████████  230/  50
+family        ██████████  400/ 400
+groceries & … █████░░░░░  280/ 600
+rental        ██████████ 2000/2000
+subcriptions  ██████████  130/ 100
+transport     ██████████  360/ 200
+─────────────────────────────────
+Total         ██████████ 4010/3800
+```
 
+Each row shows a 10-segment progress bar plus `actual/budget`. The bar
+saturates at 100%, so over-budget categories show a full bar with the
+overage visible in the numbers.
+
+Send `/summary` any time for the same table plus a 💬 AI commentary line:
+
+```
 💬 You're $210 over for the month with 5 days left — entertainment
 ($180 over) and eat-out / transport ($160 each) are the main culprits.
 Groceries are still healthy though, so try to ride those out and skip
 eat-out this week.
 ```
-
-The 💬 commentary is on by default. Set the `ENABLE_COMMENTARY` Script
-Property to `false` to skip it (the confirmation + table still fire).
 
 ## Prerequisites: two tabs in your sheet
 
@@ -108,7 +131,7 @@ In the Apps Script editor:
 
 1. Delete the default `Code.gs` content.
 2. For each file in this repo's `src/` folder (`Code.gs`, `Telegram.gs`,
-   `Gemini.gs`, `Sheet.gs`, `Setup.gs`):
+   `Gemini.gs`, `Sheet.gs`, `Setup.gs`, `Poller.gs`):
    - Click the **+** next to "Files" → **Script** → name it exactly
      (e.g. `Telegram`) → paste the file's contents.
    - For `Code.gs`, just paste into the one that's already there.
@@ -133,8 +156,7 @@ Optional:
 | Property              | Effect |
 | --------------------- | ------ |
 | `INSIGHTS_SHEET_NAME` | Name of the monthly aggregation tab. Defaults to `insights`. |
-| `ENABLE_COMMENTARY`   | Set to `false` to skip the 💬 AI nudge (saves one Gemini call per message). Any other value (or unset) keeps it on. |
-| `WEBHOOK_URL`         | Filled in later in step 8. |
+| `WEBHOOK_URL`         | Only needed if you ever switch back to webhook mode via `disablePolling`. |
 
 ### 7. Smoke-test Gemini + sheet before touching Telegram
 
@@ -148,72 +170,40 @@ Optional:
 If this doesn't work, fix it here before moving on — the Telegram layer
 just adds a webhook on top of this.
 
-### 8. Deploy as a Web App
+### 8. Switch the bot to long-polling
 
-1. **Deploy → New deployment**.
-2. **Select type → Web app**.
-3. Description: anything. **Execute as: Me**. **Who has access: Anyone**.
-   (The chat-ID guard in `doPost` keeps strangers out; "Anyone" just lets
-   Telegram's servers POST without a Google login.)
-4. **Deploy**. Copy the resulting URL — it ends in `/exec`.
-5. **Project Settings → Script Properties**, add `WEBHOOK_URL` = that URL.
+1. In the editor, open `Setup.gs`, pick `enablePolling` → **Run**.
+2. View → **Logs**. You should see `{"ok":true,...}` (webhook removed) and
+   a reminder to add the trigger.
+3. Click the clock icon (**Triggers**) on the left rail → **+ Add Trigger**.
+4. Function: `pollUpdates`. Event source: **Time-driven**. Type:
+   **Minutes timer** → **Every 1 minute**. Save.
+5. Sanity check: run `getWebhookInfo`. The `url` field should be empty.
 
-### 9. Register the webhook with Telegram
+### 9. Try it from Telegram
 
-1. In the editor, open `Setup.gs`, pick `registerWebhook` → **Run**.
-2. View → **Logs**. You should see `{"ok":true,...}`.
-3. Sanity check: also run `getWebhookInfo`; the `url` field should match
-   your `/exec` URL, `pending_update_count` should be `0`, and
-   `allowed_updates` should be `["message"]` (the bot only wants message
-   events, nothing else).
-
-### 10. Try it from Telegram
-
-- Send `lunch uni 16.68` → expect a new row in `expense record`, a ✅
-  confirmation, the budget table for the current month, and a 💬
-  commentary line.
+- Send `lunch uni 16.68` → within ~60 s, expect a new row in
+  `expense record` and a ✅ confirmation + budget table reply.
 - Send a receipt photo (with or without a caption) → same.
+- Send `/summary` → expect the table plus a 💬 commentary line.
 - From a different Telegram account, send a message → nothing should happen.
-
-### 11. (Recommended) Schedule `dropPendingUpdates`
-
-Telegram retries failed webhook deliveries with backoff and queues new
-messages behind them. If a transient error (Gemini 429, a network blip)
-ever piles up the retry buffer, new messages won't arrive until the queue
-is cleared.
-
-Set up a time-driven trigger so the queue is flushed automatically:
-
-1. In the Apps Script editor, click the clock icon (**Triggers**) →
-   **+ Add Trigger**.
-2. Function: `dropPendingUpdates`. Event source: **Time-driven**. Type:
-   **Minutes timer** → **Every 30 minutes** (or longer; 30 min is a
-   comfortable default).
-3. Save.
-
-If you ever notice "execution completed, no reply on Telegram", you can
-also just run `dropPendingUpdates` manually to clear things on demand.
 
 ## Updating the code later
 
-Apps Script is the source of truth once deployed. If you change a `.gs` file
-in the editor, you need to **Deploy → Manage deployments → edit (pencil) →
-Version: New version → Deploy** for the live webhook URL to pick it up.
-(Saving alone is enough for manual runs from the editor, but NOT for the
-deployed Web App.)
-
-If you change what `allowed_updates` or other webhook settings should be,
-re-run `registerWebhook` once for Telegram to learn the new config.
+Apps Script is the source of truth. After editing a `.gs` file, **Save**
+is enough for the next `pollUpdates` trigger run to pick it up — there's
+no Web App deployment to redeploy in polling mode.
 
 ## Troubleshooting
 
-- **Executions say "Completed" but no reply arrives on Telegram.** Telegram's
-  pending-updates queue has backed up. Run `dropPendingUpdates` from
-  `Setup.gs`, or wait for the scheduled trigger (step 11) to do it for you.
-- **Telegram messages don't reach the sheet at all.** Run `getWebhookInfo`
-  from `Setup.gs` and check `last_error_message`. Common causes: webhook URL
-  is the `/dev` URL instead of `/exec`; `ALLOWED_CHAT_ID` doesn't match your
-  actual chat ID (check via `getUpdates` as in step 2).
+- **No reply arrives on Telegram.** Open **Apps Script → Executions** and
+  check `pollUpdates`. It should run every minute. If it's failing, click a
+  failed row to see the error.
+- **`pollUpdates` runs but does nothing.** Run `getWebhookInfo`. If `url`
+  is non-empty, the webhook is still set and Telegram is delivering updates
+  to it instead of the polling queue — run `enablePolling` again.
+- **`ALLOWED_CHAT_ID` mismatch.** `processUpdate_` silently drops messages
+  whose `chat.id` doesn't match. Verify via `getUpdates` (step 2).
 - **"Gemini 400 / 403".** The API key is wrong, disabled, or hitting quota.
   Regenerate in AI Studio.
 - **Bot replies "Could not record: Bad category: X".** Gemini picked a value
@@ -221,14 +211,12 @@ re-run `registerWebhook` once for Telegram to learn the new config.
   it does, tighten the prompt in `Gemini.gs`.
 - **Reply has the ✅ confirmation but no budget table.** Either the
   `insights` tab doesn't exist (create it, see Prerequisites) or it has no
-  rows for the current month yet (expected behaviour until you log one
-  expense that flows into `insights` for today's month).
-- **💬 commentary is truncated or wrong.** The commentary call logs its
-  `finishReason` in Executions when it's not `STOP`. If you want to silence
-  commentary entirely, set `ENABLE_COMMENTARY=false` in Script Properties —
-  no redeploy needed.
-- **Nothing happens at all.** Open **Apps Script → Executions** tab to see
-  webhook invocations and errors.
+  rows for the current month yet (expected until you log one expense that
+  flows into `insights` for today's month).
+- **`/summary` 💬 commentary is truncated or wrong.** The commentary call
+  logs its `finishReason` in Executions when it's not `STOP`.
+- **Want to switch back to webhook mode anyway?** Run `disablePolling` and
+  delete the `pollUpdates` trigger. Be aware of the 302 retry storm.
 
 ## Category list
 
@@ -241,11 +229,13 @@ groceries & household, eat-out, entertainment, other`.
 
 ## Free-tier limits (personal use context)
 
-- **Apps Script**: 90 min/day runtime, 20,000 `UrlFetchApp` calls/day. A
-  single expense uses 3–4 fetches (Telegram read, Gemini parse, optional
-  Gemini commentary, Telegram reply) and well under 5 s of runtime.
-- **Gemini 2.5 Flash**: with commentary on, one expense = **2 Gemini calls**
-  (parse + commentary); with commentary off, just 1. Personal-use volume
-  is far under the free tier's RPD/TPM. The commentary call runs with
-  `thinkingConfig.thinkingBudget: 0` so it doesn't burn thinking tokens.
+- **Apps Script**: 90 min/day runtime, 20,000 `UrlFetchApp` calls/day.
+  Polling at 1/min costs ~1440 fetches and ~24 min/day of runtime baseline,
+  plus 2–3 fetches per expense (Gemini parse, optional photo download,
+  Telegram reply). `/summary` adds one extra Gemini call. Comfortably under
+  both caps for personal use.
+- **Gemini 2.5 Flash**: 1 call per expense (parse) + 1 call per `/summary`
+  (commentary). Personal-use volume is far under the free tier's RPD/TPM.
+  The commentary call runs with `thinkingConfig.thinkingBudget: 0` so it
+  doesn't burn thinking tokens.
 - **Telegram Bot API**: free.
