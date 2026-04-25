@@ -6,8 +6,6 @@ bot replies with a ✅ confirmation and a current-month budget progress table.
 Send `/summary` for the table plus a friendly AI nudge about how the month is
 tracking.
 
-![Bot reply with confirmation, budget bar table, and /summary commentary](docs/screenshot.png)
-
 - Apps Script polls Telegram → Gemini API → Google Sheet
 - No VM, no server, no cron. Runs entirely on Google's free tier.
 - Gemini parses the message / receipt into a structured row
