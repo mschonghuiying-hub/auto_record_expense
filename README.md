@@ -35,25 +35,26 @@ allowed ID, so a random person who learns the webhook URL can't spam your sheet.
 ## What the reply looks like
 
 ```
-✅ 2026-04-25 · groceries & household · 11 AUD
-Coles
+✅ 2026-04-25 · groceries & household · 35 AUD
+Woolworths weekly shop
 
 📊 2026-04
-Category       Bud   Act   Var
-car insurance  217   217     0
-eat-out        200   430  -230
-entertainment   13   883  -870
-family         500   500     0
-groceries & …  500    98   402
-rental        2303  2303     0
-subcriptions   100   239  -138
-transport      176   791  -615
------------------------------
-Total         4009  5450 -1441
+Category        Bud   Act   Var
+car insurance   200   200     0
+eat-out         250   410  -160
+entertainment    50   230  -180
+family          400   400     0
+groceries & h…  600   280   320
+rental         2000  2000     0
+subcriptions    100   130   -30
+transport       200   360  -160
+--------------------------------
+Total          3800  4010  -210
 
-💬 You're $1,441 over for the month with 5 days left — entertainment
-($870 over) and transport ($615) are the main culprits. Try to ride out
-the healthy categories and skip eat-out this week.
+💬 You're $210 over for the month with 5 days left — entertainment
+($180 over) and eat-out / transport ($160 each) are the main culprits.
+Groceries are still healthy though, so try to ride those out and skip
+eat-out this week.
 ```
 
 The 💬 commentary is on by default. Set the `ENABLE_COMMENTARY` Script
