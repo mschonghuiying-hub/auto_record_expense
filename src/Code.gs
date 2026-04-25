@@ -132,8 +132,8 @@ function formatConfirmation_(x) {
 
 /**
  * Builds a monospace progress-bar summary wrapped in <pre>...</pre>.
- * One row per category: name, a 10-segment █/░ bar, and "actual%" of budget.
- * The bar saturates at 100%; the percent number carries the overage.
+ * One row per category: name, a 10-segment █/░ bar, and "actual/budget".
+ * The bar saturates at 100%; the actual/budget pair carries the magnitude.
  *
  * summary shape: { month, rows: [{category, budget, actual, variance}], total }
  */
@@ -145,7 +145,8 @@ function formatSummaryTable_(summary) {
     return {
       category: truncate_(r.category, CAT_MAX),
       bar: makeBar_(r.actual, r.budget, BAR_LEN),
-      pct: formatPct_(r.actual, r.budget)
+      actual: String(r.actual),
+      budget: String(r.budget)
     };
   }
   var rows = summary.rows.map(row);
@@ -155,14 +156,16 @@ function formatSummaryTable_(summary) {
     budget: summary.total.budget
   });
 
-  var catW = Math.max.apply(null, rows.concat([total]).map(function (r) {
-    return r.category.length;
-  }));
+  var all = rows.concat([total]);
+  var catW = Math.max.apply(null, all.map(function (r) { return r.category.length; }));
+  var actW = Math.max.apply(null, all.map(function (r) { return r.actual.length; }));
+  var budW = Math.max.apply(null, all.map(function (r) { return r.budget.length; }));
 
   function line(r) {
-    return padRight_(r.category, catW) + '  ' + r.bar + ' ' + r.pct;
+    return padRight_(r.category, catW) + '  ' + r.bar + ' ' +
+           padLeft_(r.actual, actW) + '/' + padLeft_(r.budget, budW);
   }
-  var sep = repeat_('-', catW + 2 + BAR_LEN + 1 + 4);
+  var sep = repeat_('-', catW + 2 + BAR_LEN + 1 + actW + 1 + budW);
   var body = rows.map(line).concat([sep, line(total)]).join('\n');
   return '📊 ' + summary.month + '\n<pre>' + body + '</pre>';
 }
@@ -172,13 +175,6 @@ function makeBar_(actual, budget, len) {
   var ratio = actual / budget;
   var filled = Math.min(len, Math.max(0, Math.round(ratio * len)));
   return repeat_('█', filled) + repeat_('░', len - filled);
-}
-
-function formatPct_(actual, budget) {
-  if (!budget || budget <= 0) return '  — ';
-  var pct = Math.round((actual / budget) * 100);
-  if (pct > 999) return '999+';
-  return padLeft_(pct + '%', 4);
 }
 
 function escapeHtml_(s) {
