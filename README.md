@@ -6,6 +6,8 @@ bot replies with a ✅ confirmation and a current-month budget progress table.
 Send `/summary` for the table plus a friendly AI nudge about how the month is
 tracking.
 
+![Bot reply with confirmation, budget bar table, and /summary commentary](docs/screenshot.png)
+
 - Apps Script polls Telegram → Gemini API → Google Sheet
 - No VM, no server, no cron. Runs entirely on Google's free tier.
 - Gemini parses the message / receipt into a structured row
@@ -64,7 +66,7 @@ entertainment ██████████  230/  50
 family        ██████████  400/ 400
 groceries & … █████░░░░░  280/ 600
 rental        ██████████ 2000/2000
-subcriptions  ██████████  130/ 100
+subscriptions ██████████  130/ 100
 transport     ██████████  360/ 200
 ─────────────────────────────────
 Total         ██████████ 4010/3800
@@ -221,10 +223,12 @@ no Web App deployment to redeploy in polling mode.
 ## Category list
 
 Edit `CATEGORIES_` in `src/Gemini.gs` if you ever want to add/rename
-categories — Gemini's response schema uses that list directly.
+categories — Gemini's response schema uses that list directly. If you
+rename a category here, rename the matching row in your `insights` tab
+too; the bot looks them up by exact string match.
 
 Current categories:
-`rental, family, transport, car insurance, subcriptions, utilities,
+`rental, family, transport, car insurance, subscriptions, utilities,
 groceries & household, eat-out, entertainment, other`.
 
 ## Free-tier limits (personal use context)

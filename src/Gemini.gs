@@ -7,8 +7,11 @@
 
 var GEMINI_MODEL_ = 'gemini-2.5-flash';
 
+// IMPORTANT: this list must stay in sync with the Category column in your
+// `insights` sheet. If you rename one here, rename the matching rows in the
+// sheet too — the bot keys variance lookups by exact string match.
 var CATEGORIES_ = [
-  'rental', 'family', 'transport', 'car insurance', 'subcriptions',
+  'rental', 'family', 'transport', 'car insurance', 'subscriptions',
   'utilities', 'groceries & household', 'eat-out', 'entertainment', 'other'
 ];
 
