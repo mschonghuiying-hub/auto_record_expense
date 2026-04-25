@@ -164,7 +164,8 @@ function callGeminiCommentary_(expense, summary) {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: {
       temperature: 0.3,
-      maxOutputTokens: 200
+      maxOutputTokens: 400,
+      thinkingConfig: { thinkingBudget: 0 }
     }
   };
 
@@ -187,5 +188,9 @@ function callGeminiCommentary_(expense, summary) {
   var candidate = data.candidates && data.candidates[0];
   var out = candidate && candidate.content && candidate.content.parts &&
             candidate.content.parts[0] && candidate.content.parts[0].text;
+  if (candidate && candidate.finishReason && candidate.finishReason !== 'STOP') {
+    console.warn('Commentary finishReason=' + candidate.finishReason +
+                 ' (output len=' + (out ? out.length : 0) + ')');
+  }
   return out ? String(out).trim() : '';
 }
