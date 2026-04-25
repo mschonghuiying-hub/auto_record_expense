@@ -16,7 +16,11 @@ function registerWebhook() {
   var res = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/setWebhook', {
     method: 'post',
     contentType: 'application/json',
-    payload: JSON.stringify({ url: url, drop_pending_updates: true }),
+    payload: JSON.stringify({
+      url: url,
+      drop_pending_updates: true,
+      allowed_updates: ['message']
+    }),
     muteHttpExceptions: true
   });
   console.log(res.getContentText());
@@ -47,12 +51,16 @@ function getWebhookInfo() {
 function dropPendingUpdates() {
   var token = props_().getProperty('TELEGRAM_BOT_TOKEN');
   var url   = props_().getProperty('WEBHOOK_URL');
-  var res = UrlFetchApp.fetch(
-    'https://api.telegram.org/bot' + token + '/setWebhook' +
-    '?url=' + encodeURIComponent(url) +
-    '&drop_pending_updates=true',
-    { muteHttpExceptions: true }
-  );
+  var res = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/setWebhook', {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({
+      url: url,
+      drop_pending_updates: true,
+      allowed_updates: ['message']
+    }),
+    muteHttpExceptions: true
+  });
   console.log(res.getContentText());
 }
 
