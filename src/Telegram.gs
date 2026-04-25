@@ -31,3 +31,4 @@ function downloadTelegramFile_(fileId) {
   );
   return fileRes.getBlob();
 }
+
