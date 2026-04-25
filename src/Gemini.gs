@@ -125,6 +125,13 @@ function callGeminiCommentary_(expense, summary) {
                   ', actual ' + summary.total.actual +
                   ', variance ' + summary.total.variance;
 
+  var expenseLine = expense
+    ? 'Most recent expense (only mention if it meaningfully moved a category, ' +
+      'e.g. pushed it over for the first time; otherwise ignore it): "' +
+      expense.description + '" (' + expense.category + ', ' + expense.amount +
+      ' ' + expense.currency + ').'
+    : 'No specific recent expense to highlight — just summarize the month.';
+
   var prompt = [
     'You are writing a 2-3 sentence friendly nudge about the user\'s monthly',
     'budget, shown beneath a budget table in their Telegram expense bot.',
@@ -137,10 +144,7 @@ function callGeminiCommentary_(expense, summary) {
     rowLines,
     totalLine,
     '',
-    'Most recent expense (only mention if it meaningfully moved a category,',
-    'e.g. pushed it over for the first time; otherwise ignore it): "' +
-      expense.description + '" (' + expense.category + ', ' + expense.amount +
-      ' ' + expense.currency + ').',
+    expenseLine,
     '',
     'Required content:',
     '1. Lead with how the month is tracking overall (total budget vs actual,',
