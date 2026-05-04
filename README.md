@@ -44,10 +44,12 @@ Long-polling avoids the redirect issue entirely: Apps Script calls Telegram,
 not the other way around. The trade-off is up to ~60 s latency between
 sending a message and getting a reply, which is fine for an expense logger.
 
-Secrets (bot token, Gemini key, allowed chat ID) live in **Script Properties**,
-never in source. `processUpdate_` ignores any message whose `chat.id` doesn't
-match the allowed ID, so even if your token leaks, only your own chat is
-processed.
+Secrets (bot token, Gemini key, allowed chat IDs) live in **Script Properties**,
+never in source. `processUpdate_` ignores any message whose `chat.id` isn't
+in `ALLOWED_CHAT_ID`, so even if your token leaks, only chats you've listed
+are processed. `ALLOWED_CHAT_ID` accepts a single ID or a comma-separated
+list, so multiple Telegram accounts can share one bot and write to the same
+sheet.
 
 ## What the reply looks like
 
@@ -148,7 +150,7 @@ In the Apps Script editor:
 | -------------------- | --------------------------------------------- |
 | `TELEGRAM_BOT_TOKEN` | the token from step 1                         |
 | `GEMINI_API_KEY`     | the key from step 3                           |
-| `ALLOWED_CHAT_ID`    | your chat ID from step 2                      |
+| `ALLOWED_CHAT_ID`    | your chat ID from step 2 (comma-separate to allow multiple accounts, e.g. `123456789,987654321`) |
 | `SHEET_NAME`         | the expense tab name (e.g. `expense record`)  |
 
 Optional:
@@ -186,7 +188,23 @@ just adds a webhook on top of this.
   `expense record` and a ✅ confirmation + budget table reply.
 - Send a receipt photo (with or without a caption) → same.
 - Send `/summary` → expect the table plus a 💬 commentary line.
-- From a different Telegram account, send a message → nothing should happen.
+- From a Telegram account whose chat ID is **not** in `ALLOWED_CHAT_ID`,
+  send a message → nothing should happen.
+
+### Adding a second user
+
+To let another person contribute to the same sheet via the same bot:
+
+1. Have them message the bot once from their own Telegram account (any text).
+2. Open `https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates` and find the new
+   `"chat":{"id":...}` value for that account.
+3. Edit `ALLOWED_CHAT_ID` in **Project Settings → Script Properties** to
+   include both IDs, comma-separated, e.g. `123456789,987654321`. Save.
+4. Their next message will be processed; rows land in the same `expense
+   record` sheet and their reply (confirmation + budget table) is sent back
+   to their own chat.
+
+No redeploy needed — the next `pollUpdates` run picks up the new property.
 
 ## Updating the code later
 

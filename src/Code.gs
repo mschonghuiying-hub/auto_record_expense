@@ -32,8 +32,7 @@ function processUpdate_(update) {
     if (!msg) return;
 
     chatId = msg.chat && msg.chat.id;
-    var allowed = props_().getProperty('ALLOWED_CHAT_ID');
-    if (!allowed || String(chatId) !== String(allowed)) {
+    if (!isAllowedChat_(chatId)) {
       return;
     }
 
@@ -108,6 +107,20 @@ function wasUpdateProcessed_(updateId) {
 function markUpdateProcessed_(updateId) {
   if (updateId == null) return;
   CacheService.getScriptCache().put('tg_upd_' + updateId, '1', 21600);
+}
+
+// ALLOWED_CHAT_ID accepts a single ID or a comma/space-separated list,
+// so multiple Telegram accounts can share one bot + sheet.
+function isAllowedChat_(chatId) {
+  if (chatId == null) return false;
+  var raw = props_().getProperty('ALLOWED_CHAT_ID');
+  if (!raw) return false;
+  var target = String(chatId);
+  var parts = String(raw).split(/[\s,]+/);
+  for (var i = 0; i < parts.length; i++) {
+    if (parts[i] && parts[i] === target) return true;
+  }
+  return false;
 }
 
 function isSummaryCommand_(text) {
